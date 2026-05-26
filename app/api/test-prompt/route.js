@@ -1,5 +1,5 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import workflow from './workflow.json'
+import workflow from '../generate/workflow.json'
 
 export const maxDuration = 120
 
