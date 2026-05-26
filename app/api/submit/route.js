@@ -8,24 +8,38 @@ const supabase = createClient(
 export const maxDuration = 60
 
 export async function POST(request) {
-    const { userName, birthYear, memoryText, interpretationText, tintColor, imageData } = await request.json()
-  
+    const { userName, birthYear, memoryText, interpretationText, responseText, sceneDescription, tintColor, imageData, thumbnailData } = await request.json()
+
     // convert base64 directly to buffer — no Modal fetch needed
     const imageBuffer = Buffer.from(imageData, 'base64')
-  
+
     const filename = `${Date.now()}-${userName.replace(/\s+/g, '_')}.png`
     const { error: uploadError } = await supabase.storage
       .from('album-images')
       .upload(filename, imageBuffer, { contentType: 'image/png' })
-  
+
     if (uploadError) {
       console.error('3. Supabase upload error:', uploadError)
       return Response.json({ error: 'Failed to upload image', detail: uploadError.message }, { status: 500 })
     }
-  
+
     const { data: { publicUrl } } = supabase.storage
       .from('album-images')
       .getPublicUrl(filename)
+
+    // Also upload the first generation preview thumbnail to a separate bucket so
+    // the landing page can pick a random one as its background.
+    if (thumbnailData) {
+      const thumbBuffer = Buffer.from(thumbnailData, 'base64')
+      const thumbFilename = `${Date.now()}-${userName.replace(/\s+/g, '_')}.jpg`
+      const { error: thumbError } = await supabase.storage
+        .from('album-thumbnails')
+        .upload(thumbFilename, thumbBuffer, { contentType: 'image/jpeg' })
+      if (thumbError) {
+        // Non-fatal — log and continue. The album row still gets saved.
+        console.error('Supabase thumbnail upload error:', thumbError)
+      }
+    }
   
     const { error: dbError } = await supabase
       .from('Albums')
@@ -34,6 +48,8 @@ export async function POST(request) {
         birth_year: birthYear,
         memory_text: memoryText,
         interpretation_text: interpretationText,
+        response_text: responseText,
+        scene_description: sceneDescription,
         tint_color: tintColor,
         image_url: publicUrl,
       })

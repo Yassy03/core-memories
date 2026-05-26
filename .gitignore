@@ -39,3 +39,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# python (modal_comfyui.py is the Modal backend; build artifacts shouldn't ship)
+__pycache__/
+*.pyc
