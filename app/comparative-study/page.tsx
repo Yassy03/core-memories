@@ -130,6 +130,12 @@ function ComparativeStudyContent() {
   // textures/HDR), so the user never sees a half-loaded scene through the fade.
   const [sceneReady, setSceneReady] = useState(false)
   const [fadingOut, setFadingOut] = useState(false)
+  // 5s safety timeout — force-lifts the white sheet if SceneReadySignal never fires (asset
+  // 404, network hang). Stuck-on-white is worse than partial content.
+  useEffect(() => {
+    const t = setTimeout(() => setSceneReady(true), 5000)
+    return () => clearTimeout(t)
+  }, [])
 
   function handleBack() {
     if (fadingOut) return
@@ -275,9 +281,9 @@ function ComparativeStudyContent() {
                 >
                   <div
                     style={{
-                      fontFamily: "'BitcountGridSingle_Roman-Medium', sans-serif",
-                      fontWeight: 500,
-                      fontSize: '55px',
+                      fontFamily: "'coral-pixels', sans-serif",
+                      fontWeight: 600,
+                      fontSize: '75px',
                       textAlign: 'center',
                       width: '320px',
                       color: 'rgba(110, 108, 106, 0.5)',
@@ -287,7 +293,7 @@ function ComparativeStudyContent() {
                       letterSpacing: '0.01em',
                     }}
                   >
-                    A comparative study on images
+                    A critical study
                   </div>
                 </Html>
               </group>
@@ -582,40 +588,6 @@ function ComparativeStudyContent() {
           of the /library BackButton but on the opposite side. Hides during the
           fade-out transition so it doesn't sit on top of the white sheet. */}
       <BackButton tintColor={TINT} onClick={handleBack} hidden={fadingOut} />
-
-      {/* Albums tab — left-edge return to landing, same shape as explore/library. */}
-      <div
-        onClick={handleBack}
-        style={{
-          position: 'fixed',
-          left: 0,
-          top: '50%',
-          transform: 'translateY(-50%)',
-          zIndex: 20,
-          cursor: 'pointer',
-        }}
-      >
-        <div
-          style={{
-            background: 'rgba(240, 238, 235, 0.94)',
-            border: '0.5px solid rgba(58, 56, 53, 0.18)',
-            borderLeft: 'none',
-            borderRadius: '0 10px 10px 0',
-            padding: '16px 20px 16px 12px',
-            backdropFilter: 'blur(6px)',
-            fontFamily: "'neue-haas-grotesk-display', sans-serif",
-            fontWeight: 200,
-            fontSize: '11px',
-            color: 'rgba(58, 56, 53, 0.65)',
-            letterSpacing: '0.1em',
-            writingMode: 'vertical-rl',
-            textOrientation: 'mixed',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          albums
-        </div>
-      </div>
     </>
   )
 }

@@ -885,6 +885,23 @@ function FrameTexts() {
   )
 }
 
+// Fires `onReady` after 3 rendered frames. Mounts inside the Canvas's Suspense, so it only
+// starts counting once textures + HDR have loaded. The 3-frame wait lets the corridor's
+// MeshPhysicalMaterial + transmission shaders compile before the entry white sheet lifts.
+function SceneReadySignal({ onReady }: { onReady: () => void }) {
+  const frames = useRef(0)
+  const fired = useRef(false)
+  useFrame(() => {
+    if (fired.current) return
+    frames.current += 1
+    if (frames.current >= 3) {
+      fired.current = true
+      onReady()
+    }
+  })
+  return null
+}
+
 function ScrollScene({ images, onScrollProgress, typingLockRef, scrollArmedRef }: {
   images: string[]
   onScrollProgress: (t: number) => void
@@ -995,6 +1012,16 @@ function ExploreContent() {
   // again the moment the user scrolls. Hint copy is "(scroll)", same visual voice as
   // the landing page's "(click an album)".
   const [showScrollHint, setShowScrollHint] = useState(false)
+  // Entry fade gating — white sheet stays opaque until BOTH (a) Canvas Suspense resolves + a
+  // few frames render (sceneReady), and (b) /api/gallery fetch settles (galleryReady). 5s
+  // safety timeout force-lifts the sheet if either signal hangs.
+  const [sceneReady, setSceneReady] = useState(false)
+  const [galleryReady, setGalleryReady] = useState(false)
+  const fadingIn = !(sceneReady && galleryReady)
+  useEffect(() => {
+    const t = setTimeout(() => { setSceneReady(true); setGalleryReady(true) }, 5000)
+    return () => clearTimeout(t)
+  }, [])
 
   // Dismiss both the hint and the armed lock on the user's first scroll input. Wheel/touch
   // listeners stay attached for the lifetime of the page so a back-scroll during the armed
@@ -1039,6 +1066,7 @@ function ExploreContent() {
       .then(r => r.json())
       .then(d => setImages(d.images ?? []))
       .catch(console.error)
+      .finally(() => setGalleryReady(true))
   }, [])
 
   return (
@@ -1100,6 +1128,7 @@ function ExploreContent() {
           onCreated={({ gl }) => gl.setClearColor('#ffffff', 0)}
         >
           <Suspense fallback={null}>
+            <SceneReadySignal onReady={() => setSceneReady(true)} />
             <ScrollControls pages={TOTAL_LAYERS + 10} damping={0.45}>
               <ScrollScene
                 images={images}
@@ -1142,41 +1171,64 @@ function ExploreContent() {
         )
       })}
 
-      {showFindOut && (
-        <div
-          onClick={handleFindOutClick}
-          onMouseEnter={() => setFindOutHovered(true)}
-          onMouseLeave={() => setFindOutHovered(false)}
-          style={{
-            position: 'fixed',
-            top: '50%',
-            left: '50%',
-            transform: `translateX(-50%) translateY(-50%) scale(${findOutHovered ? 1.12 : 1})`,
-            transformOrigin: 'center center',
-            transition: 'transform 0.35s cubic-bezier(0.22, 1, 0.36, 1)',
-            zIndex: 10,
-            cursor: 'pointer',
-            fontFamily: "'coral-pixels', sans-serif",
-            fontWeight: 600,
-            fontSize: '130px',
-            letterSpacing: '0.01em',
-            color: 'rgba(110, 108, 106, 0.5)',
-            textShadow:
-              '0px -2px 2px rgba(0,0,0,0.2),' +
-              ' 0px 3px 5px rgba(255,255,255,1),' +
-              ' 0px 5px 18px rgba(255,255,255,0.85),' +
-              ' 0px 10px 36px rgba(255,255,255,0.55)',
-            whiteSpace: 'nowrap',
-            userSelect: 'none',
-            // fadeIn once on appearance, then soft-blink forever; fadingOut replaces both.
-            animation: fadingOut
-              ? 'fadeOut 0.8s ease forwards'
-              : 'fadeIn 1.2s ease, softBlink 2.8s ease-in-out 1.2s infinite',
-          }}
-        >
-          Find out
-        </div>
-      )}
+      {showFindOut && (() => {
+        // Tinted-plastic button container — same four-layer shadow stack the BackButton uses
+        // (drop + inner top-edge dark + inner bottom-right gloss + inset white stroke), sized
+        // via padding so the 130px coral-pixels "Find out" text fits naturally without a fixed
+        // width. Scales 1.08 on hover (matches BackButton). softBlink animation now drives the
+        // whole button, not just the text.
+        const [r, g, b] = parseHex(tintColor)
+        const tintFill = `rgba(${r}, ${g}, ${b}, 0.4)`
+        return (
+          <div
+            onClick={handleFindOutClick}
+            onMouseEnter={() => setFindOutHovered(true)}
+            onMouseLeave={() => setFindOutHovered(false)}
+            style={{
+              position: 'fixed',
+              top: '50%',
+              left: '50%',
+              transform: `translateX(-50%) translateY(-50%) scale(${findOutHovered ? 1.08 : 1})`,
+              transformOrigin: 'center center',
+              transition: 'transform 0.35s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 220ms ease',
+              zIndex: 10,
+              cursor: 'pointer',
+              userSelect: 'none',
+              padding: '28px 64px',
+              borderRadius: '40px',
+              background: tintFill,
+              backdropFilter: 'blur(8px) saturate(140%)',
+              WebkitBackdropFilter: 'blur(8px) saturate(140%)',
+              boxShadow: [
+                findOutHovered ? '0 14px 36px -2px rgba(0,0,0,0.34)' : '0 8px 22px -2px rgba(0,0,0,0.28)',
+                'inset 0 3px 5px 1px rgba(0,0,0,0.22)',
+                'inset -10px -8px 16px 1px rgba(255,255,255,0.55)',
+                'inset 0 0 0 0.5px rgba(255,255,255,1)',
+              ].join(', '),
+              // fadeIn once on appearance, then soft-blink forever; fadingOut replaces both.
+              animation: fadingOut
+                ? 'fadeOut 0.8s ease forwards'
+                : 'fadeIn 1.2s ease, softBlink 2.8s ease-in-out 1.2s infinite',
+            }}
+          >
+            <span style={{
+              fontFamily: "'coral-pixels', sans-serif",
+              fontWeight: 600,
+              fontSize: '130px',
+              letterSpacing: '0.01em',
+              color: 'rgba(110, 108, 106, 0.5)',
+              textShadow:
+                '0px -2px 2px rgba(0,0,0,0.2),' +
+                ' 0px 3px 5px rgba(255,255,255,1),' +
+                ' 0px 5px 18px rgba(255,255,255,0.85),' +
+                ' 0px 10px 36px rgba(255,255,255,0.55)',
+              whiteSpace: 'nowrap',
+            }}>
+              Find out
+            </span>
+          </div>
+        )
+      })()}
 
       {/* "(scroll)" hint at the top of the viewport — fades in each time typing of a frame's
           sentence finishes, fades out the moment the user scrolls. Same visual recipe as the
@@ -1203,16 +1255,17 @@ function ExploreContent() {
 
       {/* Left-edge "albums" tab removed per user request — the corridor view stays clean. */}
 
-      {/* White-sheet transition — flips opaque when "Find out" is clicked so the whole
-          viewport fades to white over 1.2s. The album page mounts with its own white sheet
-          at opacity 1 (loadFadingIn) and fades it back out, so the user experiences a
-          continuous page → white → page handoff with no flash of either page mid-transition.
-          Max zIndex so it covers everything including the Find out CTA. */}
+      {/* Dual-purpose white sheet:
+          (1) fadingIn (= !sceneReady || !galleryReady): opaque at mount, lifts once the
+              corridor's Canvas Suspense has resolved + a few frames rendered AND the
+              /api/gallery fetch has settled. 5s safety timeout in case either signal hangs.
+          (2) fadingOut: opaque when navigating away (Find out → /album, BackButton → /).
+          Either signal keeps the sheet opaque; both lift over 1.2s. */}
       <div style={{
         position: 'fixed', inset: 0,
         background: '#ffffff',
-        opacity: fadingOut ? 1 : 0,
-        pointerEvents: fadingOut ? 'auto' : 'none',
+        opacity: fadingIn || fadingOut ? 1 : 0,
+        pointerEvents: fadingIn || fadingOut ? 'auto' : 'none',
         transition: 'opacity 1.2s ease',
         zIndex: 2147483647,
       }} />

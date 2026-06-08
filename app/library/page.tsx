@@ -2,6 +2,7 @@
 
 import { useRef, useState, useEffect, useMemo, Suspense } from 'react'
 import { Canvas, useFrame } from '@react-three/fiber'
+import { Frame } from '../components/Frame'
 import { Environment, OrthographicCamera } from '@react-three/drei'
 import * as THREE from 'three'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -102,7 +103,11 @@ function BackButton({ tintColor, onClick, hidden }: { tintColor: string; onClick
       onMouseDown={() => setPressed(true)}
       onMouseUp={() => setPressed(false)}
       style={{
-        position: 'fixed', top: '24px', left: '24px', zIndex: 100,
+        // Positioned INSIDE the bubble Frame's hollow area (not flush to the viewport edge)
+        // so it doesn't get visually covered by the frame's top/left bands. The frame's inner
+        // top edge sits at ~1.5% from viewport top and inner left edge at 6vh from viewport
+        // left, so 5vh top + 10vh left gives ~38px / 43px clearance from those inner edges.
+        position: 'fixed', top: '5vh', left: '10vh', zIndex: 100,
         width: '80px', height: '52px',
         borderRadius: '14px',
         cursor: 'pointer',
@@ -167,6 +172,14 @@ function CollectiveLibraryContent() {
   // for `mounted` to flip on the client guarantees the 3D scene only initialises in the browser.
   const [mounted, setMounted] = useState(false)
   useEffect(() => { setMounted(true) }, [])
+
+  // 5s safety timeout — force-lifts the white sheet if either sceneReady or loading hangs
+  // (Modal/Supabase outage, asset 404, etc.). Without this, an outage strands users on a
+  // blank white screen with no way to recover.
+  useEffect(() => {
+    const t = setTimeout(() => { setSceneReady(true); setLoading(false) }, 5000)
+    return () => clearTimeout(t)
+  }, [])
 
   // Fetch all submitted albums. `cache: 'no-store'` bypasses any browser-cached response from
   // before the API was updated to include new columns — otherwise users see stale data shapes.
@@ -267,8 +280,8 @@ function CollectiveLibraryContent() {
         .cover { position: absolute; inset: 0; }
         .cover-glass { position: absolute; inset: 0; background: transparent; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px; }
         .cover-title {
-          font-family: 'Bitcount Grid', sans-serif;
-          font-weight: 500;
+          font-family: 'coral-pixels', sans-serif;
+          font-weight: 600;
           font-size: 55px;
           text-align: center;
           max-width: 320px;
@@ -282,6 +295,7 @@ function CollectiveLibraryContent() {
         .leaf-face { position: absolute; inset: 0; border-radius: 4px 14px 14px 4px; }
         .leaf-face.back { border-radius: 14px 4px 4px 14px; }
         @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+        @keyframes softPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
       `}</style>
 
       {/* Blurred-thumbnail background — only rendered once a supabase thumbnail URL arrives. */}
@@ -367,6 +381,7 @@ function CollectiveLibraryContent() {
                   backContent={<div style={{ position: 'relative', width: '100%', height: '100%' }} />}
                   onTurnNext={() => turnNext(0)}
                   onTurnBack={() => turnBack(0)}
+                  clickAnywhereToTurn
                 />
 
                 {/* One leaf per submitted album — image-only, same paper/translucent treatment as leaf-3 */}
@@ -560,13 +575,24 @@ function CollectiveLibraryContent() {
                             }} />
                           </div>
 
-                          {/* Response — bottom, coral-pixels, in quotes */}
-                          {album.response_text && (
+                          {/* Response + user attribution — stacked in a single bottom-half block
+                              anchored from the TOP (not the bottom), so long response text grows
+                              downward into safe page space instead of upward into the image.
+                              top: 73% sits just below the image bottom edge (image is centred at
+                              top: 50% with width 65% aspect 7/5 inside a slightly-taller-than-wide
+                              leaf face — its bottom edge lands around 70%, so 73% leaves a small
+                              margin). Both children are 13px coral-pixels so the layout stays
+                              compact even with longer responses. */}
+                          {(album.response_text || album.user_name || album.birth_year) && (
                             <div style={{
                               position: 'absolute',
-                              bottom: '10%',
+                              top: '79%',
                               left: '22%',
                               right: '28%',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              alignItems: 'center',
+                              gap: '8px',
                               textAlign: 'center',
                               fontFamily: "'coral-pixels', sans-serif",
                               fontWeight: 600,
@@ -576,7 +602,12 @@ function CollectiveLibraryContent() {
                               lineHeight: '1.4',
                               textShadow: '0px -2px 2px rgba(0,0,0,0.28), 0px 3px 5px rgba(255,255,255,1), 0px 5px 10px rgba(255,255,255,1), 0px 8px 18px rgba(255,255,255,0.95)',
                             }}>
-                              &ldquo;{album.response_text}&rdquo;
+                              {album.response_text && (
+                                <div>&ldquo;{album.response_text}&rdquo;</div>
+                              )}
+                              {(album.user_name || album.birth_year) && (
+                                <div>{[album.user_name, album.birth_year].filter(Boolean).join(', ')}</div>
+                              )}
                             </div>
                           )}
                         </div>
@@ -637,6 +668,7 @@ function CollectiveLibraryContent() {
                       }
                       onTurnNext={() => turnNext(leafIndex)}
                       onTurnBack={() => turnBack(leafIndex)}
+                      clickAnywhereToTurn
                     />
                   )
                 })}
@@ -647,19 +679,34 @@ function CollectiveLibraryContent() {
         )}
       </div>
 
-      {/* (press arrows to navigate) — same hint as the interactive album cover leaf */}
+      {/* (press arrows to navigate) — matches the interactive album's UI-hint recipe exactly:
+          coral-pixels 38px, white halo text-shadow, softPulse animation, color rgba(58,56,53,0.78).
+          Top: 5% — moved ABOVE the album for breathing room (bottom area got crowded with the
+          album's response/attribution text). */}
       {currentLeafIndex === 0 && !loading && (
         <div style={{
-          position: 'fixed', bottom: '8%', left: '50%', transform: 'translateX(-50%)',
+          position: 'fixed', top: '5%', left: '50%', transform: 'translateX(-50%)',
           fontFamily: "'coral-pixels', sans-serif",
-          fontSize: '22px', letterSpacing: '0.12em', color: 'rgba(58,56,53,0.5)',
+          fontSize: '38px',
+          letterSpacing: '0.08em',
+          color: 'rgba(58,56,53,0.78)',
+          textShadow:
+            '0 0 8px rgba(255,255,255,1),' +
+            ' 0 0 18px rgba(255,255,255,0.85),' +
+            ' 0 0 40px rgba(255,255,255,0.6)',
           pointerEvents: 'none',
-          opacity: fadingOut ? 0 : 1, transition: 'opacity 1.2s ease',
-          animation: 'blink 1s step-end infinite',
+          whiteSpace: 'nowrap',
+          zIndex: 12,
+          opacity: fadingOut ? 0 : 1,
+          transition: 'opacity 1.2s ease',
+          animation: 'softPulse 1.3s ease-in-out infinite',
         }}>
           (press arrows to navigate)
         </div>
       )}
+
+      {/* Bubble frame — same shared component the landing page uses (see app/components/Frame.tsx). */}
+      <Frame />
 
       {/* White sheet — fades out on mount, fades back in when leaving. Matches the landing page transition. */}
       <div style={{

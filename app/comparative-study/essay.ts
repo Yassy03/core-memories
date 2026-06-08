@@ -11,7 +11,7 @@ export const ESSAY: EssayBlock[] = [
   },
   {
     "type": "p",
-    "text": "\"This study is written to be read alongside Core Memories, a live web experience — [link]. Where the design makes the argument felt, this study makes it defensible.\""
+    "text": "\"This study is written to be read alongside Core Memories, a live web experience. Where the design makes the argument felt, this study makes it defensible.\""
   },
   {
     "type": "h",

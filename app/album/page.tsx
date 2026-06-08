@@ -10,6 +10,26 @@ import * as THREE from 'three'
 import { gaussianBlur } from 'three/examples/jsm/tsl/display/GaussianBlurNode.js'
 useTexture.preload('placeholders/plastic.png')
 
+// ─── TAPE-TEXT CONSTRAINT TUNING ──────────────────────────────────────────────
+// Tune these to make the textarea + submitted-display align with the visible
+// tape graphic on each leaf. Two parallel sets:
+//   • MEMORY_*   — leaf-1 back (the "describe your memory" textarea)
+//   • RESPONSE_* — leaf-4 front (the "how does this compare" textarea)
+// Each set has three knobs:
+//   • _HEIGHT_PX  — pixel height of the textarea box (= the strict cut-off height)
+//   • _TOP_PCT    — vertical center position within the leaf face (centered alignment)
+//   • _MAX_CHARS  — HARD character cap. Browser-enforced via the `maxLength` attribute,
+//                   so the user literally cannot type past this number. This is the
+//                   strict cut-off the user can manually tune.
+const MEMORY_TEXTAREA_HEIGHT_PX   = 180
+const MEMORY_TEXTAREA_TOP_PCT     = 55  // lower number = textarea sits higher on the leaf
+const MEMORY_MAX_CHARS            = 220  // strict cut-off: browser refuses keystrokes past this
+
+const RESPONSE_TEXTAREA_HEIGHT_PX = 180
+const RESPONSE_TEXTAREA_TOP_PCT   = 55  // lower number = textarea sits higher on the leaf
+const RESPONSE_MAX_CHARS          = 220  // strict cut-off: browser refuses keystrokes past this
+// ──────────────────────────────────────────────────────────────────────────────
+
 // ── TYPES ──────────────────────────────────────────────────────────────────────
 
 type Step = 'name' | 'birthday' | 'cover'
@@ -393,8 +413,8 @@ export default function CoreMemories() {
   //
   // SSR-safe pattern: initialise to a DETERMINISTIC value (first palette entry) so server
   // and client first-paint markup match, then swap to a random one in a useEffect below.
-  // The white loadFadingIn sheet covers everything for the first ~50ms anyway, so the
-  // brief deterministic-then-random switch is never visible.
+  // The white loadFadingIn sheet covers everything until sceneReady, so the brief
+  // deterministic-then-random tintColor switch happens behind the curtain and is never visible.
   const [tintColor, setTintColor] = useState(TINT_PALETTE[0])
   useEffect(() => {
     setTintColor(TINT_PALETTE[Math.floor(Math.random() * TINT_PALETTE.length)])
@@ -430,16 +450,14 @@ export default function CoreMemories() {
   // that fades in over 1.2s. We navigate at peak white, which then crossfades into the
   // landing page's own 1.2s white-sheet fade-in for a continuous album→home transition.
   const [submitFading, setSubmitFading] = useState(false)
-  // Entry fade — starts true on mount so the same white sheet is opaque at first paint.
-  // A short timer flips it false, and the sheet's CSS transition reveals the (already
-  // mounted) colorful aura background underneath. Gentler than a hard cut to color.
-  const [loadFadingIn, setLoadFadingIn] = useState(true)
-
-  // Kick off the load fade-in shortly after mount so the browser paints the initial white
-  // state first, then transitions to opacity 0. Without the brief delay, React's first
-  // commit and the state update can coalesce into a single paint and skip the transition.
+  // Entry fade — derived from sceneReady (NOT a 50ms timer). The white sheet stays opaque
+  // until the inner Canvas's SceneReadySignal fires (= Suspense resolved + a few frames
+  // rendered, so the MeshPhysicalMaterial shaders have compiled). A 5s safety timeout
+  // force-lifts the sheet if something hangs (network outage, asset 404) so users never
+  // get stuck on a white screen indefinitely.
+  const loadFadingIn = !sceneReady
   useEffect(() => {
-    const t = setTimeout(() => setLoadFadingIn(false), 50)
+    const t = setTimeout(() => setSceneReady(true), 5000)
     return () => clearTimeout(t)
   }, [])
 
@@ -459,6 +477,13 @@ export default function CoreMemories() {
   const unhoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const [imageHoverVisible, setImageHoverVisible] = useState(false)
+  // Tracks whether the user has opened the magnified inspection view at least once. Once
+  // true, stays true. Drives the leaf-3 hint text — changes from "Click image to inspect"
+  // (initial affordance) to "continue to next page" (post-inspection nudge to leaf-4).
+  const [hasInspectedImage, setHasInspectedImage] = useState(false)
+  useEffect(() => {
+    if (imageHoverVisible) setHasInspectedImage(true)
+  }, [imageHoverVisible])
   const imageUnhoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [imageLabels, setImageLabels] = useState<ImageLabel[] | null>(null)
   const [imageLabelsLoading, setImageLabelsLoading] = useState(false)
@@ -1136,6 +1161,8 @@ function startDrip(index: number) {
     setValue: (v: string) => void,
     ref: React.RefObject<HTMLTextAreaElement | null>,
   ) {
+    // Constants for this textarea are defined at MODULE LEVEL near the top of the
+    // file (search "TAPE-TEXT CONSTRAINT TUNING"). Tune there to adjust dimensions.
     const img         = index === 0 ? image0 : image1
     const isSubmitted = img.status !== 'idle'
     const typedPrompt = index === 0 ? typedPrompt0 : typedPrompt1
@@ -1159,7 +1186,7 @@ function startDrip(index: number) {
           alt=""
           style={{
             position: 'absolute',
-            width: '540px',
+            width: '660px',
             left: '55%',
             top: '50%',
             transform: 'translateX(-50%) translateY(-50%) rotate(3deg)',
@@ -1206,12 +1233,13 @@ function startDrip(index: number) {
           </div>
         )}
 
-        {/* After-tape narration — nudged slightly down to 63% to follow the input/submitted
-            text shift; keeps the relative gap below the textarea similar. */}
+        {/* After-tape narration — bumped down to 72% so there's clear breathing room between
+            the tape's bottom edge and where this narration starts. Was 63% (too tight against
+            the tape). */}
         {isSubmitted && index === 0 && (
           <div style={{
             position: 'absolute',
-            top: '63%',
+            top: '72%',
             left: '55%',
             transform: 'translateX(-50%)',
             width: '320px',
@@ -1252,38 +1280,28 @@ function startDrip(index: number) {
             visual relationship. The whole middle block shifted down to follow the tape. */}
         <div style={{
           position: 'absolute',
-          top: '61%',
+          top: `${MEMORY_TEXTAREA_TOP_PCT}%`,
           left: '55%',
           transform: 'translateX(-50%) translateY(-50%)',
-          width: '260px',
+          width: '320px',
           zIndex: 2,
           textAlign: 'center',
         }}>
-         {isSubmitted ? (
-          // Same height as the textarea below + text flowing from the top so the typed-out
-          // memory sits in the exact same position the cursor was in. Previous version used
-          // a translateY(-54px) hack tuned to the old 148px textarea height — broke once the
-          // textarea grew to 200px. Matching the height removes the need for any offset.
-          <div style={{
-            width: '100%',
-            height: '200px',
-            fontFamily: "'DM Mono', monospace",
-            fontSize: '13px',
-            fontWeight: 700,
-            lineHeight: '1.4',
-            color: '#5a5855',
-            textAlign: 'left',
-            whiteSpace: 'pre-wrap',
-          }}>
-            {value}
-          </div>
-        ) : (
+         {/* One SINGLE <textarea> across both editing AND submitted states — readOnly flips
+             true once the memory is submitted. Using one element type guarantees no baseline
+             shift on Enter (a textarea→div transition shifted by ~2px because browsers render
+             textareas with internal offsets that divs don't have, and not all of those internals
+             are CSS-overridable). */}
           <textarea
               ref={ref}
               value={value}
+              readOnly={isSubmitted}
+              // HARD character cap. Browser-enforced — once the user hits MEMORY_MAX_CHARS,
+              // additional keystrokes are silently dropped. This is the actual strict cut-off.
+              maxLength={MEMORY_MAX_CHARS}
               onChange={e => setValue(e.target.value)}
               onKeyDown={e => {
-                if (e.key === 'Enter' && !e.shiftKey) {
+                if (!isSubmitted && e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault()
                   handleMemorySubmit(index)
                 }
@@ -1293,21 +1311,23 @@ function startDrip(index: number) {
                 textAlign: 'left',
                 padding: '0',
                 width: '100%',
-                // Taller field — fits ~13 lines at 11px / line-height 1.4, vs ~9 lines before.
-                height: '200px',
+                height: `${MEMORY_TEXTAREA_HEIGHT_PX}px`,
                 background: 'transparent',
                 border: 'none',
                 outline: 'none',
                 resize: 'none',
+                overflow: 'hidden',  // never show a scrollbar; maxLength keeps content within bounds
                 fontFamily: "'DM Mono', monospace",
                 fontWeight: 600,
                 fontSize: '13px',
                 color: '#5a5855',
                 lineHeight: '1.4',
-                caretColor: '#5a5855',
+                // Hide the caret once submitted so the readonly state reads as a static display
+                // rather than a focused input. cursor:default makes the cursor non-text-style.
+                caretColor: isSubmitted ? 'transparent' : '#5a5855',
+                cursor: isSubmitted ? 'default' : 'text',
               }}
             />
-          )}
         </div>
       </div>
     )
@@ -1444,30 +1464,10 @@ function startDrip(index: number) {
         <div style={{ position: 'relative', width: '100%', height: '100%' }}>
           <LeafFrontEdges />
 
-          {/* "hover to inspect" hint — pulsing coral-pixels label above the image. Visible only
-              when the final image is ready. Reuses the global `softPulse` keyframe so it shares
-              one visual voice with the page's other top-of-screen affordances. */}
-          {image0.status === 'done' && image0.data && (
-            <div style={{
-              position: 'absolute',
-              top: '10%',
-              left: 'calc(50% - 35px)',
-              transform: 'translateX(-50%)',
-              fontFamily: "'coral-pixels', sans-serif",
-              fontWeight: 600,
-              fontSize: '16px',
-              color: 'rgba(90, 88, 85, 0.72)',
-              letterSpacing: '0.05em',
-              textShadow:
-                '0px -2px 2px rgba(0,0,0,0.2),' +
-                ' 0px 3px 5px rgba(255,255,255,1)',
-              pointerEvents: 'none',
-              whiteSpace: 'nowrap',
-              animation: 'softPulse 1.3s ease-in-out infinite',
-            }}>
-              click to inspect
-            </div>
-          )}
+          {/* "Click image to inspect" hint has moved OUT of the leaf so it doesn't sit
+              alongside the narration content. See the fixed-position version near the bottom
+              of the JSX (search "currentLeafIndex === 3" — it sits beside the arrow-keys
+              hint block). */}
 
           {/* Final image — library treatment with a few tweaks vs the library original:
                 · top moved 50% → 38% so the image sits in the upper half (more room for the
@@ -1573,7 +1573,7 @@ function startDrip(index: number) {
             alt=""
             style={{
               position: 'absolute',
-              width: '540px',
+              width: '660px',
               left: 'calc(50% - 35px)',
               top: '50%',
               transform: 'translateX(-50%) translateY(-50%) rotate(3deg)',
@@ -1621,104 +1621,64 @@ function startDrip(index: number) {
               request: leaf-4's content sits at true page center, not leaf-1's biased shift. */}
           <div style={{
             position: 'absolute',
-            top: '61%',
+            // RESPONSE_TEXTAREA_TOP_PCT — tune at module level to shift vertical position.
+            top: `${RESPONSE_TEXTAREA_TOP_PCT}%`,
             left: 'calc(50% - 35px)',
             transform: 'translateX(-50%) translateY(-50%)',
-            width: '260px',
+            width: '320px',
             zIndex: 2,
             textAlign: 'center',
           }}>
-            {responseSubmitted ? (
-              <div style={{
-                width: '100%',
-                fontFamily: "'DM Mono', monospace",
-                fontSize: '13px',
-                fontWeight: 700,
-                lineHeight: '1.4',
-                color: '#5a5855',
-                textAlign: 'center',
-                whiteSpace: 'pre-wrap',
-              }}>
-                {response0}
-              </div>
-            ) : (
-              <textarea
-                ref={responseRef}
-                value={response0}
-                onChange={e => setResponse0(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault()
-                    if (response0.trim()) setResponseSubmitted(true)
+            {/* SINGLE textarea across editing AND submitted states (readOnly flips true on
+                submit) — guarantees no baseline shift on Enter. See the matching pattern in
+                renderMemoryInput on leaf-1. */}
+            <textarea
+              ref={responseRef}
+              value={response0}
+              readOnly={responseSubmitted}
+              // HARD character cap — browser-enforced, the strict cut-off. Tune
+              // RESPONSE_MAX_CHARS at module level to adjust.
+              maxLength={RESPONSE_MAX_CHARS}
+              onChange={e => setResponse0(e.target.value)}
+              onKeyDown={e => {
+                // Enter to submit, mirroring leaf-1's memory textarea behavior. Locks the
+                // textarea (setResponseSubmitted) AND fires the album-submit flow in one
+                // gesture — same effect as clicking the "submit album" button below.
+                if (!responseSubmitted && e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault()
+                  if (response0.trim()) {
+                    setResponseSubmitted(true)
+                    handleSubmitAlbum()
                   }
-                }}
-                placeholder="write your response here..."
-                style={{
-                  textAlign: 'left',
-                  padding: '0',
-                  width: '100%',
-                  // Taller field to match leaf-1 — fits ~13 lines at 11px / line-height 1.4.
-                  height: '200px',
-                  background: 'transparent',
-                  border: 'none',
-                  outline: 'none',
-                  resize: 'none',
-                  fontFamily: "'DM Mono', monospace",
-                  fontWeight: 600,
-                  fontSize: '11px',
-                  color: '#5a5855',
-                  lineHeight: '1.4',
-                  caretColor: '#5a5855',
-                }}
-              />
-            )}
+                }
+              }}
+              placeholder="write your response here...hit enter to send"
+              style={{
+                textAlign: 'left',
+                padding: '0',
+                width: '100%',
+                // RESPONSE_TEXTAREA_HEIGHT_PX — tune at module level to adjust box height.
+                height: `${RESPONSE_TEXTAREA_HEIGHT_PX}px`,
+                background: 'transparent',
+                border: 'none',
+                outline: 'none',
+                resize: 'none',
+                overflow: 'hidden',  // never show a scrollbar; maxLength keeps content within bounds
+                fontFamily: "'DM Mono', monospace",
+                fontWeight: 600,
+                fontSize: '13px',
+                color: '#5a5855',
+                lineHeight: '1.4',
+                caretColor: responseSubmitted ? 'transparent' : '#5a5855',
+                cursor: responseSubmitted ? 'default' : 'text',
+              }}
+            />
           </div>
 
-          {/* Submit affordance has moved out of the leaf face — now a fixed page-level
-              element at top: 6% styled like the arrow-key hint. See the JSX block lower
-              in this component, gated on currentLeafIndex === 4. */}
-
-          {/* Submit affordance — sits below the tape with a margin. Smaller than the previous
-              page-level version (20px Question tier instead of 38px CTA tier) since it's no
-              longer the page-level focal point. Centered on the visible page (calc(50% - 35px)).
-              Fades in the moment the user starts typing their response; status labels cycle
-              through saving / done / error in place. */}
-          <div
-            onMouseEnter={() => submitStatus === 'idle' && setSubmitHovered(true)}
-            onMouseLeave={() => setSubmitHovered(false)}
-            onClick={submitStatus === 'idle' ? handleSubmitAlbum : undefined}
-            style={{
-              position: 'absolute',
-              top: '88%',
-              left: 'calc(50% - 35px)',
-              // Combined translateX (centering) + scale (hover bump). scale stays at 1 unless
-              // the user is hovering AND the button is in the clickable 'idle' state.
-              transform: `translateX(-50%) scale(${submitHovered && submitStatus === 'idle' ? 1.15 : 1})`,
-              fontFamily: "'coral-pixels', sans-serif",
-              fontWeight: 600,
-              fontSize: '20px',
-              letterSpacing: '0.04em',
-              color: submitStatus === 'error' ? 'rgba(180, 80, 80, 0.85)' : 'rgba(58,56,53,0.78)',
-              textShadow:
-                '0px -2px 2px rgba(0,0,0,0.2),' +
-                ' 0px 3px 5px rgba(255,255,255,1)',
-              whiteSpace: 'nowrap',
-              zIndex: 3,
-              opacity: response0.length > 0 || submitStatus !== 'idle' ? 1 : 0,
-              // Transform transition uses the same cubic-bezier overshoot as the BackButton
-              // elsewhere in the app — gives a springy "haptic" response on hover.
-              transition: 'opacity 1.2s ease, transform 220ms cubic-bezier(0.34, 1.5, 0.64, 1)',
-              cursor: submitStatus === 'idle' ? 'pointer' : 'default',
-              pointerEvents: submitStatus === 'idle' ? 'auto' : 'none',
-              animation: 'softPulse 1.3s ease-in-out infinite',
-              userSelect: 'none',
-            }}
-          >
-            {submitStatus === 'idle' && 'submit album'}
-            {submitStatus === 'submitting' && 'saving...'}
-            {submitStatus === 'done' && 'album saved'}
-            {submitStatus === 'error' && 'something went wrong'}
-          </div>
+          {/* Submit affordance has moved OUT of the leaf face entirely — now a fixed
+              page-level element at bottom: 6%, matching the styling of the other UI hints
+              (arrow-keys hint at top, "Click image to inspect" on leaf-3). See the JSX block
+              lower in this component, gated on currentLeafIndex === 4. */}
         </div>
       ),
       back: <div style={{ position: 'relative', width: '100%', height: '100%' }}><LeafBackEdges /></div>,
@@ -2046,15 +2006,17 @@ function startDrip(index: number) {
             {step === 'birthday' && (
               <div className="input-screen">
                 <div className="input-card">
-                  <span className="input-label">Please enter your birthday:</span>
+                  <span className="input-label">Please enter your year of birth:</span>
                   <input
                     ref={inputRef}
                     className="input-field"
                     value={bdayInput}
-                    onChange={e => setBdayInput(e.target.value)}
+                    onChange={e => setBdayInput(e.target.value.replace(/\D/g, ''))}
                     onKeyDown={e => e.key === 'Enter' && submitBirthday()}
                     placeholder="yyyy"
                     autoComplete="off"
+                    inputMode="numeric"
+                    maxLength={4}
                   />
                 </div>
               </div>
@@ -2249,8 +2211,70 @@ function startDrip(index: number) {
           </div>
         )}
 
-        {/* Leaf-4 submit affordance moved INTO leaf-4's front content (sits below the tape).
-            See the leaf-4 leaf definition above. */}
+        {/* Leaf-3 "Click image to inspect" hint — same size and styling as the arrow-keys
+            hint above, but positioned at the BOTTOM of the viewport (under the album) so the
+            UI instructions stay visually separate from the leaf's narration content. Visible
+            only while the user is on leaf-3 AND the final image is rendered AND the magnified
+            inspection overlay isn't already open. */}
+        {currentLeafIndex === 3 && image0.status === 'done' && image0.data && !imageHoverVisible && (
+          <div style={{
+            position: 'fixed', bottom: '6%', left: '50%', transform: 'translateX(-50%)',
+            fontFamily: "'coral-pixels', sans-serif",
+            fontSize: '38px',
+            letterSpacing: '0.08em',
+            color: 'rgba(58,56,53,0.78)',
+            textShadow:
+              '0 0 8px rgba(255,255,255,1),' +
+              ' 0 0 18px rgba(255,255,255,0.85),' +
+              ' 0 0 40px rgba(255,255,255,0.6)',
+            pointerEvents: 'none',
+            whiteSpace: 'nowrap',
+            zIndex: 12,
+            animation: 'softPulse 1.3s ease-in-out infinite',
+          }}>
+            {hasInspectedImage ? 'continue to next page' : 'Click image to inspect'}
+          </div>
+        )}
+
+        {/* Leaf-4 submit affordance — fixed page-level element at bottom: 6%, same size and
+            styling as the arrow-keys hint and the "Click image to inspect" hint, but
+            INTERACTIVE (click + hover scale). Always visible on leaf-4 as a persistent
+            option (Enter in the textarea is the alternate path). Status labels cycle through
+            saving / done / error in place; clickable only while submitStatus === 'idle'. */}
+        {currentLeafIndex === 4 && (
+          <div
+            onMouseEnter={() => submitStatus === 'idle' && setSubmitHovered(true)}
+            onMouseLeave={() => setSubmitHovered(false)}
+            onClick={submitStatus === 'idle' && response0.trim() ? handleSubmitAlbum : undefined}
+            style={{
+              position: 'fixed', bottom: '6%', left: '50%',
+              transform: `translateX(-50%) scale(${submitHovered && submitStatus === 'idle' && response0.trim() ? 1.1 : 1})`,
+              fontFamily: "'coral-pixels', sans-serif",
+              fontSize: '38px',
+              letterSpacing: '0.08em',
+              // Slightly dimmer when there's no response yet, so the affordance reads as
+              // "available but waiting for input". Full opacity once user has typed.
+              color: submitStatus === 'error' ? 'rgba(180, 80, 80, 0.85)' : 'rgba(58,56,53,0.78)',
+              opacity: response0.trim() || submitStatus !== 'idle' ? 1 : 0.45,
+              textShadow:
+                '0 0 8px rgba(255,255,255,1),' +
+                ' 0 0 18px rgba(255,255,255,0.85),' +
+                ' 0 0 40px rgba(255,255,255,0.6)',
+              whiteSpace: 'nowrap',
+              zIndex: 12,
+              cursor: submitStatus === 'idle' && response0.trim() ? 'pointer' : 'default',
+              pointerEvents: submitStatus === 'idle' && response0.trim() ? 'auto' : 'none',
+              userSelect: 'none',
+              animation: 'softPulse 1.3s ease-in-out infinite',
+              transition: 'transform 220ms cubic-bezier(0.34, 1.5, 0.64, 1), opacity 0.6s ease',
+            }}
+          >
+            {submitStatus === 'idle' && 'submit album'}
+            {submitStatus === 'submitting' && 'saving...'}
+            {submitStatus === 'done' && 'album saved'}
+            {submitStatus === 'error' && 'something went wrong'}
+          </div>
+        )}
 
         {displayCard && (
           <div style={{
@@ -2468,8 +2492,9 @@ function startDrip(index: number) {
         />
 
         {/* Dual-purpose white sheet — covers the whole viewport at max zIndex. Two triggers:
-            (1) loadFadingIn: true at mount, flips false after 50ms → sheet fades from white
-                to revealed, gently introducing the colorful aura background underneath.
+            (1) loadFadingIn (= !sceneReady): true at mount, flips false once the inner
+                Canvas Suspense has resolved AND a few frames have rendered (so shaders
+                compile before reveal). 5s safety timeout in case something hangs.
             (2) submitFading: flips true once an album is submitted → sheet fades to white
                 again, masking the route change to '/' so the landing page's own white
                 fade-in picks up seamlessly. Rendered last in DOM so it tiebreaks above the

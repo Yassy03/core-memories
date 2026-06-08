@@ -6,6 +6,25 @@ import { OrthographicCamera, Environment } from '@react-three/drei'
 import { useRouter } from 'next/navigation'
 import * as THREE from 'three'
 import { BinderRings, BookGroup, CoverOverlay, Page } from './components/BookComponents'
+import { Frame } from './components/Frame'
+
+// Fires `onReady` after 3 rendered frames. Mounts inside the Canvas's Suspense, so it only
+// starts counting once textures + HDR have loaded. The 3-frame wait gives shader compilation
+// (MeshPhysicalMaterial / clearcoat) time to settle before we lift the white sheet, avoiding
+// the "shape appears, then re-renders with the proper material a tick later" pop.
+function SceneReadySignal({ onReady }: { onReady: () => void }) {
+  const frames = useRef(0)
+  const fired = useRef(false)
+  useFrame(() => {
+    if (fired.current) return
+    frames.current += 1
+    if (frames.current >= 3) {
+      fired.current = true
+      onReady()
+    }
+  })
+  return null
+}
 
 function GroundShadow({ position = [0, -4, 0] as [number, number, number] }) {
   const meshRef = useRef<THREE.Mesh>(null)
@@ -137,19 +156,23 @@ export default function IntroPage() {
     return [shuffled[0], shuffled[1], shuffled[2]]
   })
   const [fadingOut, setFadingOut] = useState(false)
-  const [fadingIn, setFadingIn] = useState(true)   // start covered by white sheet, then fade it out
+  // Entry fade — white sheet stays opaque until the inner Canvas Suspense resolves AND a
+  // few frames render (= Frame3D + AlbumCard shaders are compiled). SceneReadySignal inside
+  // the Canvas sets sceneReady=true. fadingIn is derived from !sceneReady — no 50ms timer.
+  const [sceneReady, setSceneReady] = useState(false)
+  const fadingIn = !sceneReady
+  // 5s safety timeout — force-lifts the white sheet if something hangs (network outage,
+  // asset 404) so users never get stuck on a white screen indefinitely.
+  useEffect(() => {
+    const t = setTimeout(() => setSceneReady(true), 5000)
+    return () => clearTimeout(t)
+  }, [])
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null)
   // Static background — always /background.png. The previous random-thumbnail fetch was
   // removed: landing always uses the same backdrop now. The state is kept as a const so the
   // existing render conditions (`backgroundUrl &&`) and the ?bg= URL forwarded to
   // /comparative-study continue to work without other code changes.
   const backgroundUrl = '/background.png'
-
-  useEffect(() => {
-    // Kick off the white-sheet fade-out shortly after mount so the transition reads as "fading in".
-    const t = setTimeout(() => setFadingIn(false), 50)
-    return () => clearTimeout(t)
-  }, [])
 
   function navigateTo(href: string) {
     if (fadingOut) return
@@ -282,6 +305,7 @@ export default function IntroPage() {
           <GroundShadow position={[0, -3.5, 0]} />
           <GroundShadow position={[5, -3.5, 0]} />
           <Suspense fallback={null}>
+            <SceneReadySignal onReady={() => setSceneReady(true)} />
             {albums.map((album, i) => {
               const pushSign = hoveredIndex === null || hoveredIndex === i
                 ? 0
@@ -381,11 +405,17 @@ export default function IntroPage() {
       {/* Left-edge "albums" tab removed per user request. The /library route is still
           reachable via the "Collective album" card in the main row. */}
 
-      {/* White sheet — fades out on mount, fades back in when leaving. Dreamy, liminal transition. */}
+      {/* Bubble frame — see app/components/Frame.tsx. Both white surface + tube-shading SVG. */}
+      <Frame />
+
+      {/* White sheet — opaque on mount until sceneReady (= Canvas Suspense resolved + a
+          few frames rendered), then fades out over 1.2s. Re-opaques over 1.2s when navigating
+          (fadingOut). pointerEvents auto while opaque so clicks don't leak through to the
+          (effectively invisible) page behind. */}
       <div style={{
         position: 'fixed', inset: 0,
         background: 'white',
-        pointerEvents: 'none',
+        pointerEvents: fadingIn || fadingOut ? 'auto' : 'none',
         opacity: fadingIn || fadingOut ? 1 : 0,
         transition: 'opacity 1.2s ease',
         zIndex: 2147483647,

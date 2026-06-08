@@ -1178,6 +1178,10 @@ export function PreviewCycler({ frames }: { frames: string[] }) {
     imagePlaneComposite?: ImagePlaneComposite
     onTurnNext: () => void
     onTurnBack: () => void
+    // When true, the ENTIRE front face becomes the click target for onTurnNext (not just
+    // the 110px corner triangle). Use for non-interactive viewers like /library where the
+    // pages have no editable content and we want intuitive "click anywhere to advance".
+    clickAnywhereToTurn?: boolean
   }
 
   export function Page({
@@ -1190,6 +1194,7 @@ export function PreviewCycler({ frames }: { frames: string[] }) {
     imagePlanePosition, imagePlaneSize, imagePlaneBlur, imagePlaneComposite,
     onImageHover, onImageUnhover,
     onTurnNext, onTurnBack,
+    clickAnywhereToTurn,
   }: PageProps) {
     const group          = useRef<THREE.Group>(null)
     const imagePlaneGrp  = useRef<THREE.Group>(null)
@@ -1416,8 +1421,20 @@ export function PreviewCycler({ frames }: { frames: string[] }) {
               style={{ width: '600px', height: '600px', background: 'transparent', position: 'relative', overflow: 'hidden' }}
             >
               {frontContent}
-              {index === 0 ? (
-                <div className="page-turn-overlay" onClick={onTurnNext} />
+              {(index === 0 || clickAnywhereToTurn) ? (
+                // Full-face click target. Used for: (a) the cover (index === 0) so clicking
+                // anywhere on the closed book opens it, (b) any non-interactive page when the
+                // parent passes clickAnywhereToTurn (e.g. /library viewer).
+                // Inline styles (not a CSS class) so this works on any page using <Page />,
+                // regardless of whether that page defines a .page-turn-overlay rule in its stylesheet.
+                <div
+                  onClick={onTurnNext}
+                  style={{
+                    position: 'absolute', inset: 0,
+                    cursor: 'pointer', zIndex: 10,
+                    background: 'transparent',
+                  }}
+                />
               ) : (
                 <div
                   onMouseEnter={() => { if (!noCorner) cornerHoverRef.current = true }}
@@ -1440,15 +1457,29 @@ export function PreviewCycler({ frames }: { frames: string[] }) {
               style={{ width: '600px', height: '600px', background: 'transparent', position: 'relative', overflow: 'hidden' }}
             >
               {backContent}
-              <div
-                onClick={e => { e.stopPropagation(); onTurnBack() }}
-                style={{
-                  position: 'absolute', bottom: 0, left: 0,
-                  width: '110px', height: '110px',
-                  clipPath: 'polygon(0 0, 100% 100%, 0 100%)',
-                  cursor: 'pointer', zIndex: 30, background: 'transparent',
-                }}
-              />
+              {clickAnywhereToTurn ? (
+                // Mirror of the front-face full-overlay: when clickAnywhereToTurn is set,
+                // the entire back face is the click target for turn-back. Used by /library
+                // so users can click the left page of an open spread to go back.
+                <div
+                  onClick={onTurnBack}
+                  style={{
+                    position: 'absolute', inset: 0,
+                    cursor: 'pointer', zIndex: 10,
+                    background: 'transparent',
+                  }}
+                />
+              ) : (
+                <div
+                  onClick={e => { e.stopPropagation(); onTurnBack() }}
+                  style={{
+                    position: 'absolute', bottom: 0, left: 0,
+                    width: '110px', height: '110px',
+                    clipPath: 'polygon(0 0, 100% 100%, 0 100%)',
+                    cursor: 'pointer', zIndex: 30, background: 'transparent',
+                  }}
+                />
+              )}
             </div>
           </Html>
         </mesh>
