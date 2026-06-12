@@ -332,7 +332,9 @@ export default function IntroPage() {
             canvas but the click overlays at zIndex INT_MAX still tiebreak above on equal stacks). */}
         <div style={{
           position: 'fixed',
-          top: '3%',
+          // Sits just below the bubble frame's 6vh top band, with a small breathing margin.
+          // (Was at 3% before the frame's top widened from 1.5% to 6vh.)
+          top: '7vh',
           left: '50%',
           transform: 'translateX(-50%)',
           fontFamily: "'coral-pixels', sans-serif",

@@ -2,7 +2,6 @@
 
 import { useRef, useState, useEffect, useMemo, Suspense } from 'react'
 import { Canvas, useFrame } from '@react-three/fiber'
-import { Frame } from '../components/Frame'
 import { Environment, OrthographicCamera } from '@react-three/drei'
 import * as THREE from 'three'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -103,11 +102,7 @@ function BackButton({ tintColor, onClick, hidden }: { tintColor: string; onClick
       onMouseDown={() => setPressed(true)}
       onMouseUp={() => setPressed(false)}
       style={{
-        // Positioned INSIDE the bubble Frame's hollow area (not flush to the viewport edge)
-        // so it doesn't get visually covered by the frame's top/left bands. The frame's inner
-        // top edge sits at ~1.5% from viewport top and inner left edge at 6vh from viewport
-        // left, so 5vh top + 10vh left gives ~38px / 43px clearance from those inner edges.
-        position: 'fixed', top: '5vh', left: '10vh', zIndex: 100,
+        position: 'fixed', top: '24px', left: '24px', zIndex: 100,
         width: '80px', height: '52px',
         borderRadius: '14px',
         cursor: 'pointer',
@@ -681,8 +676,8 @@ function CollectiveLibraryContent() {
 
       {/* (press arrows to navigate) — matches the interactive album's UI-hint recipe exactly:
           coral-pixels 38px, white halo text-shadow, softPulse animation, color rgba(58,56,53,0.78).
-          Top: 5% — moved ABOVE the album for breathing room (bottom area got crowded with the
-          album's response/attribution text). */}
+          Top: 5% — sits above the album so the bottom area stays clear of clutter (the album's
+          response + attribution text already lives down there). */}
       {currentLeafIndex === 0 && !loading && (
         <div style={{
           position: 'fixed', top: '5%', left: '50%', transform: 'translateX(-50%)',
@@ -704,9 +699,6 @@ function CollectiveLibraryContent() {
           (press arrows to navigate)
         </div>
       )}
-
-      {/* Bubble frame — same shared component the landing page uses (see app/components/Frame.tsx). */}
-      <Frame />
 
       {/* White sheet — fades out on mount, fades back in when leaving. Matches the landing page transition. */}
       <div style={{

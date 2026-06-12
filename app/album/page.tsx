@@ -351,7 +351,11 @@ function BackButton({ tintColor, onClick, hidden }: { tintColor: string; onClick
       onMouseDown={() => setPressed(true)}
       onMouseUp={() => setPressed(false)}
       style={{
-        position: 'fixed', top: '24px', left: '24px', zIndex: 100,
+        // zIndex 2147483647 (INT_MAX) so the BackButton sits ABOVE the aura curtain
+        // (2147483646), which is `pointerEvents: auto` during the name/birthday input steps
+        // to block clicks to the hidden book corners. Without this, the curtain would
+        // intercept BackButton clicks during those steps.
+        position: 'fixed', top: '24px', left: '24px', zIndex: 2147483647,
         width: '80px', height: '52px',
         borderRadius: '14px',
         cursor: 'pointer',

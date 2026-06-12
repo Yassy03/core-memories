@@ -21,7 +21,10 @@ export function Frame() {
           rounded INNER edge is visible. */}
       <div style={{
         position: 'fixed',
-        top: '1.5%',
+        // All four insets at 6vh / 6% so the frame's visible width is uniform on every side.
+        // Pages that use <Frame /> need top-aligned content to start below ~6vh so it isn't
+        // covered by the frame's top band.
+        top: '6vh',
         left: '6vh',
         right: '6vh',
         bottom: '6%',
@@ -42,7 +45,7 @@ export function Frame() {
 
 // SVG overlay that paints the dark/bright/dark tube-cross-section shading onto the white
 // frame ring only. See Frame() above for the design rationale. The mask is sized to the exact
-// CSS frame position (top:1.5%, left/right:6vh, bottom:6%, radius:60px) via JS-measured
+// CSS frame position (top/left/right: 6vh, bottom: 6%, radius: 60px) via JS-measured
 // viewport pixels — SVG attributes can't natively use the mixed % / vh units the CSS uses.
 function FrameSurfaceShading() {
   const [size, setSize] = useState({ w: 0, h: 0 })
@@ -55,8 +58,8 @@ function FrameSurfaceShading() {
   if (size.w === 0) return null
 
   const sideInset = 0.06 * size.h    // 6vh
-  const topInset = 0.015 * size.h    // 1.5% of viewport height
-  const bottomInset = 0.06 * size.h  // 6% of viewport height
+  const topInset = 0.06 * size.h     // 6vh (matches sides for uniform visible width)
+  const bottomInset = 0.06 * size.h  // 6% of viewport height ≈ 6vh
   const radius = 60                  // matches borderRadius: '60px'
   const holeX = sideInset
   const holeY = topInset
