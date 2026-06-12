@@ -151,10 +151,27 @@ export default function IntroPage() {
     '#B86694', // raspberry / magenta
     '#D89AC2', // pastel pink
   ]
-  const [albumColors] = useState(() => {
-    const shuffled = [...FOLDER_PALETTE].sort(() => Math.random() - 0.5)
-    return [shuffled[0], shuffled[1], shuffled[2]]
-  })
+  // SSR-safe pattern: initialise to a deterministic triple (first three palette entries) so
+  // server and client first-paint markup match, then swap to a random distinct triple in a
+  // useEffect below. The white sceneReady curtain covers everything for the first few frames
+  // so the deterministic-then-random swap is never visible.
+  // INVARIANT: the three returned colors are guaranteed distinct — Fisher–Yates produces a
+  // permutation of the palette, and slicing the first three indices of a permutation of
+  // distinct elements yields three distinct elements.
+  const [albumColors, setAlbumColors] = useState<[string, string, string]>(
+    [FOLDER_PALETTE[0], FOLDER_PALETTE[1], FOLDER_PALETTE[2]]
+  )
+  useEffect(() => {
+    // Fisher–Yates shuffle — replaces the previous `sort(() => Math.random() - 0.5)` trick,
+    // which is non-uniform and can produce biased orderings on some V8 implementations.
+    const a = [...FOLDER_PALETTE]
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1))
+      ;[a[i], a[j]] = [a[j], a[i]]
+    }
+    setAlbumColors([a[0], a[1], a[2]])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   const [fadingOut, setFadingOut] = useState(false)
   // Entry fade — white sheet stays opaque until the inner Canvas Suspense resolves AND a
   // few frames render (= Frame3D + AlbumCard shaders are compiled). SceneReadySignal inside

@@ -7,6 +7,12 @@ import * as THREE from 'three'
 
 const PageActiveContext = createContext<React.MutableRefObject<boolean>>({ current: false })
 
+// Selector used by Page's clickAnywhereToTurn mode: any click whose target lives inside one
+// of these elements is treated as "interactive" and does NOT turn the page. Lets textareas,
+// buttons, inputs, and links keep working when the whole leaf face is the click target.
+// Tag opt-out elements with `data-no-turn` if you need to whitelist something custom.
+const NO_TURN_SELECTOR = 'textarea, button, input, a, [data-no-turn]'
+
 // Reusable aura-orb visual — a soft radial-gradient color blob with grain blended INTO
 // the colors. Used in two places: as the ghost behind the closed cover (CoverPolaroidGhost)
 // and as the focal element on leaf-1's front (replacing the polaroid image).
@@ -1418,15 +1424,23 @@ export function PreviewCycler({ frames }: { frames: string[] }) {
             <div
               ref={frontRef}
               className={`leaf-face front ${frontClass ?? ''}`}
-              style={{ width: '600px', height: '600px', background: 'transparent', position: 'relative', overflow: 'hidden' }}
+              // clickAnywhereToTurn (non-cover): the leaf-face wrapper itself is the click
+              // target. Bails on interactive descendants (textarea/button/input/a/[data-no-turn])
+              // so things like /album's memory & response textareas still focus normally and
+              // leaf-3's image click-to-magnify still works (it stopPropagation()s upstream).
+              onClick={clickAnywhereToTurn && index !== 0 ? (e) => {
+                if ((e.target as HTMLElement).closest(NO_TURN_SELECTOR)) return
+                onTurnNext()
+              } : undefined}
+              style={{
+                width: '600px', height: '600px', background: 'transparent', position: 'relative', overflow: 'hidden',
+                cursor: clickAnywhereToTurn && index !== 0 ? 'pointer' : undefined,
+              }}
             >
               {frontContent}
-              {(index === 0 || clickAnywhereToTurn) ? (
-                // Full-face click target. Used for: (a) the cover (index === 0) so clicking
-                // anywhere on the closed book opens it, (b) any non-interactive page when the
-                // parent passes clickAnywhereToTurn (e.g. /library viewer).
-                // Inline styles (not a CSS class) so this works on any page using <Page />,
-                // regardless of whether that page defines a .page-turn-overlay rule in its stylesheet.
+              {index === 0 && (
+                // Cover stays on the dedicated full-overlay path so clicking anywhere on
+                // the closed book opens it.
                 <div
                   onClick={onTurnNext}
                   style={{
@@ -1435,7 +1449,10 @@ export function PreviewCycler({ frames }: { frames: string[] }) {
                     background: 'transparent',
                   }}
                 />
-              ) : (
+              )}
+              {!clickAnywhereToTurn && index !== 0 && (
+                // Default mode: 110px corner triangle is the click target. Hover sets
+                // cornerHoverRef which animates the 3D paper-curl.
                 <div
                   onMouseEnter={() => { if (!noCorner) cornerHoverRef.current = true }}
                   onMouseLeave={() => { cornerHoverRef.current = false }}
@@ -1454,22 +1471,18 @@ export function PreviewCycler({ frames }: { frames: string[] }) {
             <div
               ref={backRef}
               className="leaf-face back"
-              style={{ width: '600px', height: '600px', background: 'transparent', position: 'relative', overflow: 'hidden' }}
+              onClick={clickAnywhereToTurn ? (e) => {
+                if ((e.target as HTMLElement).closest(NO_TURN_SELECTOR)) return
+                onTurnBack()
+              } : undefined}
+              style={{
+                width: '600px', height: '600px', background: 'transparent', position: 'relative', overflow: 'hidden',
+                cursor: clickAnywhereToTurn ? 'pointer' : undefined,
+              }}
             >
               {backContent}
-              {clickAnywhereToTurn ? (
-                // Mirror of the front-face full-overlay: when clickAnywhereToTurn is set,
-                // the entire back face is the click target for turn-back. Used by /library
-                // so users can click the left page of an open spread to go back.
-                <div
-                  onClick={onTurnBack}
-                  style={{
-                    position: 'absolute', inset: 0,
-                    cursor: 'pointer', zIndex: 10,
-                    background: 'transparent',
-                  }}
-                />
-              ) : (
+              {!clickAnywhereToTurn && (
+                // Default mode: bottom-left 110px corner triangle for turn-back.
                 <div
                   onClick={e => { e.stopPropagation(); onTurnBack() }}
                   style={{

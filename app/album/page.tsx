@@ -524,7 +524,7 @@ export default function CoreMemories() {
   const [typedSceneDesc, setTypedSceneDesc] = useState('')
   const prompt0Full = "imagine returning to a core memory from your childhood. describe that memory. include details such as location and time of day."
   const prompt1Full = "I read that your core memories make you who you are. tell me about a core memory you have from childhood"
-  const prompt2Full = "how does this compare to your memory, do you see it?"
+  const prompt2Full = "how does this compare to your memory? how does this image make you feel?"
 
   // Leaf-4 user response — saved with the album on submit.
   const [response0, setResponse0] = useState('')
@@ -2179,6 +2179,7 @@ function startDrip(index: number) {
                       } : undefined}
                       onTurnNext={() => setCurrentLeafIndex(index + 1)}
                       onTurnBack={() => setCurrentLeafIndex(prev => prev - 1)}
+                      clickAnywhereToTurn
                     />
                   ))}
                 </BookGroup>
@@ -2212,6 +2213,31 @@ function startDrip(index: number) {
               : 'softPulse 1.3s ease-in-out infinite',
           }}>
             (press arrows to navigate)
+          </div>
+        )}
+
+        {/* Leaf-1-back "hit enter to submit" hint — same recipe as the other UI hints
+            (coral-pixels 38px, white halo, softPulse). Visible whenever the user is on the
+            memory-input spread (currentLeafIndex === 2) AND the memory hasn't been submitted
+            yet (image0.status === 'idle'). Disappears the moment the user hits Enter:
+            handleMemorySubmit fires and flips image0.status from 'idle' to 'generating'. */}
+        {currentLeafIndex === 2 && image0.status === 'idle' && (
+          <div style={{
+            position: 'fixed', bottom: '6%', left: '50%', transform: 'translateX(-50%)',
+            fontFamily: "'coral-pixels', sans-serif",
+            fontSize: '38px',
+            letterSpacing: '0.08em',
+            color: 'rgba(58,56,53,0.78)',
+            textShadow:
+              '0 0 8px rgba(255,255,255,1),' +
+              ' 0 0 18px rgba(255,255,255,0.85),' +
+              ' 0 0 40px rgba(255,255,255,0.6)',
+            pointerEvents: 'none',
+            whiteSpace: 'nowrap',
+            zIndex: 12,
+            animation: 'softPulse 1.3s ease-in-out infinite',
+          }}>
+            hit enter to submit
           </div>
         )}
 
